@@ -1,0 +1,77 @@
+build: off
+version: 2.0.{build}
+
+environment:
+    PYTHON_HOME: 'C:/Python27'
+    SZ_EXE   :   '"C:/Program Files/7-Zip/7z.exe"'
+    make : 'C:/MinGW/bin/mingw32-make.exe'
+
+init:
+  - 'echo PYTHON_HOME=%PYTHON_HOME%'
+  - '%PYTHON_HOME%/python.exe -V'
+  - '%PYTHON_HOME%/Scripts/pip.exe --version'
+
+install:
+  - '%PYTHON_HOME%/Scripts/pip.exe install psutil'
+  - '%PYTHON_HOME%/Scripts/pip.exe install pypiwin32'
+  - '%PYTHON_HOME%/Scripts/pip.exe install winshell'
+  - '%PYTHON_HOME%/Scripts/pip.exe install py2exe_py2'
+  - ps: if (-not (Test-Path pygtk-all-in-one-2.24.2.win32-py2.7.msi)) { Start-FileDownload "https://ftp.gnome.org/pub/GNOME/binaries/win32/pygtk/2.24/pygtk-all-in-one-2.24.2.win32-py2.7.msi" }
+  - ps: Get-FileHash pygtk-all-in-one-2.24.2.win32-py2.7.msi -Algorithm MD5 # 4bddf847f81d8de2d73048b113da3dd5
+  - 'msiexec /i pygtk-all-in-one-2.24.2.win32-py2.7.msi /qn /norestart /log pygtk-install.log TARGETDIR=C:\Python27 ALLUSERS=1'
+  - ps: if (-not (Test-Path upx394w.zip)) { Start-FileDownload "https://github.com/upx/upx/releases/download/v3.94/upx394w.zip" }
+  - ps: Get-FileHash upx394w.zip
+  - '%SZ_EXE% x upx394w.zip'
+  - ps: if (-not (Test-Path gettext0.19.8.1-iconv1.14-static-32.zip)) { Start-FileDownload "https://github.com/mlocati/gettext-iconv-windows/releases/download/v0.19.8.1-v1.14/gettext0.19.8.1-iconv1.14-static-32.zip" }
+  - ps: Get-FileHash gettext0.19.8.1-iconv1.14-static-32.zip
+  - '%SZ_EXE% x gettext0.19.8.1-iconv1.14-static-32.zip -ogettext'
+  - 'set PATH=%PATH%;%cd%\gettext\bin;C:\MinGW\bin;'
+# Show version numbers of installed software.
+  - 'msgunfmt -V'
+  - 'strip.exe -V'
+  - '"c:\Program Files (x86)\NSIS\makensis.exe" /version'
+
+build_script:
+  - '%make% -C po local'
+  - '%PYTHON_HOME%/python.exe -m windows.setup_py2exe'
+  - 'move windows\BleachBit*.exe .'
+  - 'move windows\BleachBit*.zip .'
+  - ps: Get-FileHash BleachBit-*
+
+cache:
+  - pygtk-all-in-one-2.24.2.win32-py2.7.msi
+  - upx394w.zip
+  - gettext0.19.8.1-iconv1.14-static-32.zip
+
+test_script:
+# coveralls.io
+  - '%PYTHON_HOME%/Scripts/pip.exe install python-coveralls requests[security]'
+# shorten very long path because of error https://github.com/az0/bleachbit/issues/166
+  - 'set PATH=c:\windows\system32;c:\windows;c:\windows\system32\wbem;c:\windows\SysWOW64\WindowsPowerShell\v1.0\'
+  - '%PYTHON_HOME%/Scripts/pip.exe install mock'
+  - 'SET DESTRUCTIVE_TESTS=T'
+  - '%PYTHON_HOME%/Scripts/coverage.exe run --include="bleachbit/*" -m unittest discover -v -p Test*.py'
+
+artifacts:
+  - path: BleachBit-*-setup.exe
+    name: FullInstaller
+
+  - path: BleachBit-*-setup-English.exe
+    name: EnglishInstaller
+
+  - path: BleachBit-*-portable.zip
+    name: Portable
+
+  - path: .coverage
+
+deploy:
+  - provider: S3
+    access_key_id:
+      secure: CrPvjz7Jvg4gwOHKxUsL0PPR4mqAjB2p15/pvFw3fCk=
+    secret_access_key:
+      secure: VoAH5pVyhmTK3/KRuV5WcgfkTR3k/M9QDt7UD6ewcwNfkUvMynwjAHnKCG4vR0Rx
+    bucket: bleachbitci
+    folder: dl/$(APPVEYOR_BUILD_VERSION)
+    artifact:
+    set-public: true
+    reduced_redundancy: true
